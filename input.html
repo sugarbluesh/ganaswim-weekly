@@ -412,7 +412,7 @@ body {
 
 <script>
 // ── 설정 ─────────────────────────────────────────────
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwq50c_V1lwdSJs3Idvy5zzvpgySzspEYWO3QTFVnTrYMxalET3N9lxiqbgi7XuVLhz/exec';
+const APPS_SCRIPT_URL = 'YOUR_APPS_SCRIPT_URL_HERE';
 
 // 기본값 (관리자가 설정 안 했을 때 사용)
 const DEFAULT_MEMBERS = ["한정훈","최유진","류창환","구동환","이봄","최정아","오승미","옥찬주"];
@@ -428,22 +428,34 @@ function buildPartColors() {
   PARTS.forEach((p, i) => { PART_COLORS[p] = PART_COLOR_PALETTE[i % PART_COLOR_PALETTE.length]; });
 }
 
-// 관리자 설정을 서버(Apps Script)에서 불러오기 — 실패 시 기본값 사용
-async function loadConfig() {
-  try {
-    const res = await fetch(`${APPS_SCRIPT_URL}?action=getConfig`);
-    const cfg = await res.json();
-    if (cfg.members && cfg.members.length) MEMBERS = cfg.members;
-    if (cfg.parts && cfg.parts.length)     PARTS   = cfg.parts;
-  } catch (e) { /* 기본값 유지 */ }
-  buildPartColors();
-  populateMemberSelect();
-}
-
+// 화면이 열리면 기본값으로 즉시 드롭다운을 채우고,
+// 관리자 설정값은 백그라운드에서 받아와 조용히 갱신한다 (대기 없음)
 function populateMemberSelect() {
   const sel = document.getElementById('member');
+  const cur = sel.value; // 갱신 중 사용자가 이미 선택했다면 유지
   sel.innerHTML = '<option value="">이름 선택</option>' +
     MEMBERS.map(m => `<option>${m}</option>`).join('');
+  if (cur && MEMBERS.includes(cur)) sel.value = cur;
+}
+
+// 백그라운드 갱신: 응답이 늦거나 실패해도 화면은 이미 기본값으로 떠 있는 상태
+function refreshConfigInBackground() {
+  fetch(`${APPS_SCRIPT_URL}?action=getConfig`)
+    .then(res => res.json())
+    .then(cfg => {
+      let changed = false;
+      if (cfg.members && cfg.members.length && JSON.stringify(cfg.members) !== JSON.stringify(MEMBERS)) {
+        MEMBERS = cfg.members; changed = true;
+      }
+      if (cfg.parts && cfg.parts.length && JSON.stringify(cfg.parts) !== JSON.stringify(PARTS)) {
+        PARTS = cfg.parts; changed = true;
+      }
+      if (changed) {
+        buildPartColors();
+        populateMemberSelect();
+      }
+    })
+    .catch(() => { /* 실패해도 기본값으로 계속 사용 */ });
 }
 
 // ── 주차 계산 ─────────────────────────────────────────
@@ -771,9 +783,11 @@ function showToast(msg) {
 }
 
 // ── 초기화 ────────────────────────────────────────────
-(async function init() {
-  await loadConfig();
+(function init() {
+  buildPartColors();
+  populateMemberSelect();   // 기본값으로 즉시 표시 — 대기 없음
   addRow();
+  refreshConfigInBackground(); // 최신 설정은 백그라운드에서 조용히 갱신
 })();
 </script>
 </body>
