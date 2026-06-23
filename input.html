@@ -305,6 +305,21 @@ body {
 }
 .btn-reset:hover { border-color: #2E86AB; color: #2E86AB; }
 
+/* 수정 모드 배너 */
+.edit-banner {
+  display: none; align-items: center; gap: 8px;
+  background: #FFF3CD; border: 1.5px solid #F5DFA0; border-radius: 10px;
+  padding: 11px 16px; margin-bottom: 14px; font-size: 12px; color: #856404; font-weight: 600;
+}
+.edit-banner.show { display: flex; }
+.edit-banner .icon { font-size: 14px; }
+.checking-banner {
+  display: none; align-items: center; gap: 8px;
+  background: #F0F4F8; border-radius: 10px;
+  padding: 10px 16px; margin-bottom: 14px; font-size: 12px; color: #8A9BB0;
+}
+.checking-banner.show { display: flex; }
+
 .toast {
   position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
   background: #1B3A5C; color: white; padding: 12px 24px;
@@ -336,6 +351,14 @@ body {
           <label>주차</label>
           <div class="week-display" id="weekDisplay">—</div>
         </div>
+      </div>
+
+      <div class="checking-banner" id="checkingBanner">
+        <span>⏳</span><span>이번 주 제출 내역을 확인하는 중...</span>
+      </div>
+      <div class="edit-banner" id="editBanner">
+        <span class="icon">✏️</span>
+        <span>이번 주에 이미 제출한 업무가 있어 불러왔어요. 수정 후 다시 제출하면 기존 내용이 업데이트돼요.</span>
       </div>
 
       <!-- 전주 업무 보기 -->
@@ -524,46 +547,94 @@ async function loadPrevWeek() {
   }
 }
 
-function onMemberChange() {
+let isEditMode = false;
+
+async function onMemberChange() {
   prevWeekLoaded = false;
   const body = document.getElementById('prevWeekBody');
   body.classList.contains('open') ? loadPrevWeek() : (body.innerHTML = '<div class="prev-empty">담당자를 선택하면 지난주 업무를 불러와요</div>');
-  updatePreview();
+
+  const member = document.getElementById('member').value;
+  document.getElementById('editBanner').classList.remove('show');
+  isEditMode = false;
+
+  // 입력 중이던 행 초기화
+  document.getElementById('taskBody').innerHTML = '';
+  document.getElementById('scheduleBody').innerHTML = '';
+  rowId = 0; schedId = 0;
+
+  if (!member) {
+    addRow();
+    updatePreview();
+    return;
+  }
+
+  // 이번 주 기존 제출 내역 확인
+  const checkingBanner = document.getElementById('checkingBanner');
+  checkingBanner.classList.add('show');
+  try {
+    const res = await fetch(`${APPS_SCRIPT_URL}?action=get`);
+    const data = await res.json();
+    const myTasks = (data.rows || []).filter(r => r.member === member && r.week === WEEK.label);
+    const mySchedules = (data.schedules || []).filter(s => s.member === member && s.week === WEEK.label);
+
+    if (myTasks.length > 0) {
+      myTasks.forEach(t => addRow(t));
+      isEditMode = true;
+      document.getElementById('editBanner').classList.add('show');
+    } else {
+      addRow();
+    }
+    mySchedules.forEach(s => addScheduleRow(s));
+  } catch (e) {
+    addRow();
+    showToast('이번 주 제출 내역을 불러오지 못했어요. 새로 입력해 주세요.');
+  } finally {
+    checkingBanner.classList.remove('show');
+    updatePreview();
+  }
 }
 
 // ── 업무 행 ───────────────────────────────────────────
 let rowId = 0;
 
-function addRow() {
+function addRow(prefill) {
   rowId++;
   const tbody = document.getElementById('taskBody');
   const tr = document.createElement('tr');
   tr.id = `row-${rowId}`;
   const rid = rowId;
-  const partOpts = PARTS.map(p => `<option>${p}</option>`).join('');
+  const p = prefill || {};
+  const opt = (val, cur) => `<option value="${val}"${val===cur?' selected':''}>${val||'선택'}</option>`;
+  const partOpts = PARTS.map(p2 => `<option${p2===p.part?' selected':''}>${p2}</option>`).join('');
 
   tr.innerHTML = `
     <td>${tbody.rows.length + 1}</td>
     <td><select data-field="part" onchange="updatePreview()">
       <option value="">선택</option>${partOpts}</select></td>
     <td><textarea data-field="content" placeholder="업무 내용 입력" rows="1"
-      oninput="autoResize(this);updatePreview()"></textarea></td>
+      oninput="autoResize(this);updatePreview()">${escHtml(p.content||'')}</textarea></td>
     <td><select data-field="type" onchange="updatePreview()">
       <option value="">선택</option>
-      <option>신규</option><option>정기</option><option>이월</option></select></td>
+      ${['신규','정기','이월'].map(v=>`<option${v===p.type?' selected':''}>${v}</option>`).join('')}</select></td>
     <td><select data-field="status" onchange="updatePreview()">
       <option value="">선택</option>
-      <option>예정</option><option>진행중</option><option>완료</option><option>보류</option></select></td>
+      ${['예정','진행중','완료','보류'].map(v=>`<option${v===p.status?' selected':''}>${v}</option>`).join('')}</select></td>
     <td><select data-field="priority" onchange="updatePreview()">
       <option value="">선택</option>
-      <option>상</option><option>중</option><option>하</option></select></td>
-    <td><input type="text" data-field="note" placeholder="이슈·요청사항" oninput="updatePreview()"></td>
+      ${['상','중','하'].map(v=>`<option${v===p.priority?' selected':''}>${v}</option>`).join('')}</select></td>
+    <td><input type="text" data-field="note" placeholder="이슈·요청사항" value="${escAttr(p.note||'')}" oninput="updatePreview()"></td>
     <td><button class="btn-del" onclick="delRow(${rid})">×</button></td>
   `;
   tbody.appendChild(tr);
   updatePreview();
-  tr.querySelector('textarea').focus();
+  if (!prefill) tr.querySelector('textarea').focus();
+  // 미리 채워진 textarea도 높이 맞춰주기
+  const ta = tr.querySelector('textarea');
+  autoResize(ta);
 }
+
+function escAttr(s) { return String(s).replace(/"/g, '&quot;'); }
 
 function autoResize(el) {
   el.style.height = 'auto';
@@ -591,12 +662,13 @@ function getRows() {
 // ── 일정 행 ───────────────────────────────────────────
 let schedId = 0;
 
-function addScheduleRow() {
+function addScheduleRow(prefill) {
   schedId++;
   const tbody = document.getElementById('scheduleBody');
   const tr = document.createElement('tr');
   tr.id = `sched-${schedId}`;
   const sid = schedId;
+  const p = prefill || {};
 
   // 이번 주 날짜 옵션 (월~금)
   const monday = (() => {
@@ -611,7 +683,7 @@ function addScheduleRow() {
   for (let i = 0; i < 5; i++) {
     const d = new Date(monday); d.setDate(monday.getDate() + i);
     const val = `${d.getMonth()+1}/${d.getDate()}(${dayNames[i]})`;
-    dateOpts += `<option value="${val}">${val}</option>`;
+    dateOpts += `<option value="${val}"${val===p.date?' selected':''}>${val}</option>`;
   }
 
   tr.innerHTML = `
@@ -619,8 +691,8 @@ function addScheduleRow() {
     <td><select data-field="date" onchange="updatePreview()">${dateOpts}</select></td>
     <td><select data-field="type" onchange="updatePreview()">
       <option value="">선택</option>
-      <option>휴가</option><option>외근</option><option>출장</option></select></td>
-    <td><input type="text" data-field="note" placeholder="장소·사유 등" oninput="updatePreview()"></td>
+      ${['휴가','외근','출장'].map(v=>`<option${v===p.type?' selected':''}>${v}</option>`).join('')}</select></td>
+    <td><input type="text" data-field="note" placeholder="장소·사유 등" value="${escAttr(p.note||'')}" oninput="updatePreview()"></td>
     <td><button class="btn-del" onclick="delScheduleRow(${sid})">×</button></td>
   `;
   tbody.appendChild(tr);
@@ -737,6 +809,7 @@ async function submitForm() {
     submittedAt: new Date().toISOString(),
     tasks: filled,
     schedules: scheds,
+    isEdit: isEditMode, // true면 Apps Script가 기존 행을 지우고 다시 씀
   };
 
   try {
@@ -758,16 +831,18 @@ function showDone(member, count, schedCount) {
   document.getElementById('inputView').style.display = 'none';
   const dv = document.getElementById('doneView');
   dv.style.display = 'block';
-  document.getElementById('doneTitle').textContent = `${member}님, 제출 완료!`;
+  document.getElementById('doneTitle').textContent = isEditMode ? `${member}님, 수정 완료!` : `${member}님, 제출 완료!`;
   const extra = schedCount > 0 ? ` · 일정 ${schedCount}건` : '';
-  document.getElementById('doneSub').textContent = `${WEEK.label} 업무 ${count}건${extra}이 팀장에게 전달됐어요`;
+  const verb = isEditMode ? '업데이트' : '전달';
+  document.getElementById('doneSub').textContent = `${WEEK.label} 업무 ${count}건${extra}이 ${verb}됐어요`;
 }
 
 function resetForm() {
   document.getElementById('member').value = '';
   document.getElementById('taskBody').innerHTML = '';
   document.getElementById('scheduleBody').innerHTML = '';
-  rowId = 0; schedId = 0; prevWeekLoaded = false;
+  rowId = 0; schedId = 0; prevWeekLoaded = false; isEditMode = false;
+  document.getElementById('editBanner').classList.remove('show');
   document.getElementById('prevWeekBody').innerHTML = '<div class="prev-empty">담당자를 선택하면 지난주 업무를 불러와요</div>';
   document.getElementById('prevWeekBody').classList.remove('open');
   document.getElementById('prevToggleBtn').classList.remove('open');
