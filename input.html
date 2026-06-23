@@ -414,8 +414,8 @@ body {
 // ── 설정 ─────────────────────────────────────────────
 const APPS_SCRIPT_URL = 'YOUR_APPS_SCRIPT_URL_HERE';
 
-// 기본값 (관리자가 설정 안 했을 때 사용)
-const DEFAULT_MEMBERS = ["한정훈","최유진","류창환","구동환","이봄","최정아","오승미","옥찬주"];
+// 기본값 (관리자가 설정 안 했을 때 사용) — 가나다순 정렬
+const DEFAULT_MEMBERS = ["한정훈","최유진","류창환","구동환","이봄","최정아","오승미","옥찬주"].sort((a,b)=>a.localeCompare(b,'ko'));
 const DEFAULT_PARTS   = ["사이트","상품","광고 마케팅","브랜딩/SNS","영상콘텐츠","네이버스토어","해외영업"];
 const PART_COLOR_PALETTE = ["#2E86AB","#1A9474","#D4851A","#8E44AD","#C0392B","#27AE60","#E67E22","#16A085","#7F8C8D","#2980B9"];
 
@@ -444,8 +444,11 @@ function refreshConfigInBackground() {
     .then(res => res.json())
     .then(cfg => {
       let changed = false;
-      if (cfg.members && cfg.members.length && JSON.stringify(cfg.members) !== JSON.stringify(MEMBERS)) {
-        MEMBERS = cfg.members; changed = true;
+      if (cfg.members && cfg.members.length) {
+        const sortedMembers = [...cfg.members].sort((a,b)=>a.localeCompare(b,'ko'));
+        if (JSON.stringify(sortedMembers) !== JSON.stringify(MEMBERS)) {
+          MEMBERS = sortedMembers; changed = true;
+        }
       }
       if (cfg.parts && cfg.parts.length && JSON.stringify(cfg.parts) !== JSON.stringify(PARTS)) {
         PARTS = cfg.parts; changed = true;
